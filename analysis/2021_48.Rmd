@@ -1,0 +1,191 @@
+---
+title: "TidyTuesday 2021-11-23"
+output: html_notebook
+---
+
+
+```{r setup, message=FALSE, warning=FALSE}
+# Loading packages and data
+library(tidyverse)
+library(waffle)
+library(patchwork)
+
+tuesdata <- tidytuesdayR::tt_load('2021-11-23')
+
+episodes <- tuesdata$episodes
+writers <- tuesdata$writers
+imdb <- tuesdata$imdb
+directors <- tuesdata$directors
+
+```
+
+Examining the distribution of episodes by director
+```{r}
+writers %>% count(writer, sort = TRUE)
+```
+Manipulating the data to get the amount of episodes from the 5 directors with most episodes, and grouping everybody else in "Other".
+```{r}
+# Episodes by type
+episodes_by_type <- 
+  episodes %>% 
+  select(story_number, type) %>% 
+  mutate(type = ifelse(type == "episode", "Regular Episode", "Special"),
+         type = fct_relevel(type, "Special", "Regular Episode"))
+
+  
+df_eps_writers <- 
+  writers %>% 
+  left_join(episodes_by_type) %>% 
+  mutate(writer = fct_lump_n(writer, n = 6)) %>% 
+  count(writer, type) %>% 
+  mutate(writer = fct_reorder(writer, n, .fun = sum, .desc = TRUE),
+         writer = fct_relevel(writer, "Other", after = Inf)) %>% 
+  ungroup()
+
+df_eps_writers
+```
+
+Creating the waffle plot of total episodes by director:
+```{r}
+# Defining breaks for Y axis
+max_value_y_axis <- max(df_eps_writers$n)  %/% 5
+seq_breaks <- seq(0, max_value_y_axis, by = 2)
+
+plot_waffle <- 
+  ggplot(df_eps_writers) +
+  waffle::geom_waffle(aes(fill = type, values = n),
+                      color = "#01050e", size = 0.25, n_rows = 5, flip = TRUE) +
+  facet_wrap(~writer, nrow = 1, strip.position = "bottom") +
+  scale_x_discrete() +
+  scale_y_continuous(labels = function(x) x * 5, #this should be the same as n_rows
+                     breaks = seq_breaks,
+                     expand = c(0, 0),
+                     name = "Number of episodes") +
+  coord_equal() +
+  scale_fill_manual(name = NULL,
+                    values = c("Regular Episode" = "#003b6f",
+                               "Special" = "#e04006")) +
+  theme_minimal(base_family = "Bahnschrift") +
+  theme(panel.grid = element_blank(),
+        axis.ticks.y = element_line(color = "white"),
+        legend.position = c(0.6, 0.7),
+        plot.title = element_text(family = "Doctor Who", size = 22,
+                                  color = "white", face = "plain"),
+        plot.subtitle = element_text(size = 12,
+                                  color = "white", face = "plain"),
+        plot.background  = element_rect(fill = '#01050e'),
+        axis.title.y = element_text(color = "white"),
+        axis.text = element_text(color = "white"),
+        strip.text = element_text(color = "white"),
+        legend.text = element_text(color = "white")
+        ) +
+  labs(title = "Doctor Who episodes by director",
+       subtitle = "Who has been the best?")
+  
+plot_waffle
+```
+
+Another plot: IMDB ratings by director.
+Joining and manipulating to get the scores associated to the directors, and the average score by director.
+```{r}
+episodes2 <- 
+  episodes %>% 
+  select(story_number, type, season_number, episode_number, episode_title)
+
+epi_writ_imdb <- 
+  writers %>% 
+  left_join(episodes2) %>% 
+  left_join(imdb,
+            by = c("season_number" = "season",
+                   "episode_number" = "ep_num")) %>% 
+  mutate(writer = fct_lump_n(writer, n = 6),
+         writer = fct_reorder(writer, rep(1, n()), .fun = sum, .desc = TRUE),
+         writer = fct_relevel(writer, "Other", after = Inf))
+
+rat_by_writer <- 
+  epi_writ_imdb %>% 
+  group_by(writer) %>% 
+  summarise(avg_rating = mean(rating, na.rm = TRUE))
+
+rat_by_writer
+```
+
+Creating the dataframe with the best and worst episode by director
+```{r}
+best_and_worst <- 
+  epi_writ_imdb %>% 
+  filter(complete.cases(.)) %>% 
+  group_by(writer) %>% 
+  mutate(worst = row_number(rating) == 1,
+         best = row_number(desc(rating)) == 1) %>% 
+  filter(best | worst) %>% 
+  mutate(rating_label = ifelse(best,
+                               rating + 0.2,
+                               rating - 0.2))
+
+best_and_worst
+```
+
+Plot of distributions of IMDB scores by director:
+```{r}
+data_plot <- epi_writ_imdb %>% 
+  select(writer, rating, episode_title) %>% 
+  anti_join(best_and_worst,
+            by = c("writer", "rating", "episode_title"))
+
+plot_best_worst <- 
+  data_plot %>% 
+  ggplot(aes(writer, y = rating)) +
+  geom_point(alpha = 0.4,
+             position = position_jitter(seed = 1989),
+             color = "white") +
+  geom_label(data = rat_by_writer,
+             aes(writer, y = avg_rating, label = round(avg_rating, 1)),
+             fill = "black",
+             color = "white",
+             size = 5.2,
+             family = "Bahnschrift",
+             label.r = unit(0, "lines"),
+             label.size = 0.1,
+             label.padding = unit(0.3, "lines"),
+             alpha = 0.8) +
+  geom_text(data = best_and_worst,
+            family = "Bahnschrift",
+            aes(y = rating_label, label = str_wrap(episode_title, 15)),
+            size = 3,
+            vjust = best_and_worst$worst,
+            color = "white") +
+  geom_point(data = best_and_worst,
+             color = "white") +
+  facet_wrap(~writer, nrow = 1, scales = "free_x") +
+  scale_x_discrete(breaks = c(0.5, 1.5, 2.5)) +
+  theme_minimal(base_family = "Bahnschrift") +
+  theme(panel.grid.major.y = element_blank(),
+        panel.grid.minor.y = element_blank(),
+        axis.ticks.y = element_line(),
+        axis.title.x = element_blank(),
+        axis.text.x = element_blank(),
+        strip.text.x = element_blank(),
+        plot.background  = element_rect(fill = '#01050e'),
+        axis.title.y = element_text(color = "white"),
+        axis.text = element_text(color = "white"),
+        strip.text = element_text(color = "white"),
+        legend.text = element_text(color = "white"),
+        plot.caption = element_text(color = "#6f8ea9")) +
+   labs(y = "IMDB Ratings",
+        caption = "@franciscoyira\ngithub.com/franciscoyira\nSource: {datardis} R package")
+
+plot_best_worst
+```
+
+Putting both plots together with patchwork:
+```{r, fig.height=5.8, fig.width=7.5}
+combined_plot <- 
+  (plot_waffle / plot_best_worst)
+
+combined_plot &
+  theme(plot.background  = element_rect(fill = '#01050e',
+                                        color = '#01050e'))
+```
+
+
