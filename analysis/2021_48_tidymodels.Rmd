@@ -1,0 +1,119 @@
+---
+title: "tidymodels with Doctor Who data (2021-48)"
+output: html_notebook
+---
+
+This is me following the Julia Silge's screencast predicting viewership for Doctor Who episodes
+
+https://juliasilge.com/blog/doctor-who/
+https://www.youtube.com/watch?v=T8SSxIo-9Rg 
+
+```{r setup, message=FALSE, warning=FALSE}
+library(tidyverse)
+library(tidymodels)
+```
+
+## Explore the data
+
+```{r import-data}
+episodes <- readr::read_csv("https://raw.githubusercontent.com/rfordatascience/tidytuesday/master/data/2021/2021-11-23/episodes.csv") %>%
+  filter(!is.na(uk_viewers))
+```
+Visualizing raw data (viewership)
+```{r exploratory-plot}
+episodes %>% 
+  ggplot(aes(first_aired, uk_viewers)) +
+  geom_line(alpha = 0.8, size = 1.2, color = "midnightblue") +
+  labs(x = NULL)
+```
+
+There are spikes in christmas specials, season finales, and specials episodes.
+
+## Create a workflow
+
+```{r}
+set.seed(1989)
+
+# Building bootstraped resamples with stratification
+folds <- bootstraps(episodes,
+                    times = 100,
+                    strata = uk_viewers)
+folds
+```
+
+Feature engineering:
+We want to build features from the date variable.
+
+
+
+```{r}
+who_recipe <- 
+recipe(uk_viewers ~ first_aired, data = episodes) %>%
+  #Function `step_date()` by default creates features for year, month and day of the week.
+  # In this case, we're going to just creat a 'year' feature because the data is so small.
+  step_date(first_aired, features = "year") %>%
+  # `keep_original_cols` argument allows us to decide whether to keep the original date column.
+  step_holiday(first_aired,
+               holidays = c("NewYearsDay", "ChristmasDay"),
+               keep_original_cols = FALSE)
+
+who_recipe
+```
+Training the recipe (this is not needed, it's just for preview)
+```{r}
+prep(who_recipe)
+```
+Checking how the data will look like:
+```{r}
+prep(who_recipe) %>% bake(new_data = NULL)
+```
+
+Now let's make a workflow:
+It's useful because it allows to have our pre-processing and modeling in one object, and also because it promotes good statistical practices and helps us avoid common pitfalls.
+```{r}
+who_wf <- workflow(who_recipe,
+                   linear_reg()) 
+who_wf
+```
+
+## Extract from resampled workflows
+
+By default models are thrown away (it asumes that all you care about is performance). But you can modify that behaviour with the following code:
+```{r}
+# extract allows to retain stuff objects from the model fit
+# extract_fit_engine will extract the trained lm object
+# we could also use custom functions!
+ctrl_extract <- control_resamples(extract = extract_fit_engine)
+```
+
+
+The previous configuration will generate a new column named 'extracts'
+```{r}
+doParallel::registerDoParallel()
+set.seed(1989)
+who_rs <- fit_resamples(who_wf, folds, control = ctrl_extract)
+who_rs
+```
+
+```{r}
+results <- 
+  who_rs %>% 
+  select(id, .extracts) %>% 
+  unnest(.extracts) %>% 
+  mutate(coefs = map(.extracts, tidy)) %>% 
+  unnest(coefs) %>% 
+# For each of the bootstrap resamples we now have the terms and the coefficients!
+  filter(term != "(Intercept)")
+
+results
+```
+If we wanted, we could do a lot of analysis on these bootstraped coefficients!
+
+```{r}
+results %>% 
+  ggplot(aes(estimate, fill = term)) +
+  geom_histogram(alpha = 0.8, bins = 12, show.legend = FALSE) +
+  facet_wrap(vars(term), scales = "free")
+```
+
+Christimas and New Year episodes have higher viewership, and there is a downward trend over the years.
