@@ -3,6 +3,7 @@ title: "TidyTuesday 2021-11-23"
 output: html_notebook
 ---
 
+Link for downloading the Doctor Who font: https://fontmeme.com/fuentes/fuente-doctor-who/
 
 ```{r setup, message=FALSE, warning=FALSE}
 # Loading packages and data
@@ -17,13 +18,20 @@ writers <- tuesdata$writers
 imdb <- tuesdata$imdb
 directors <- tuesdata$directors
 
+# setwd(here::here())
+# 
+# library(extrafont)
+
 ```
 
 Examining the distribution of episodes by director
+
 ```{r}
 writers %>% count(writer, sort = TRUE)
 ```
+
 Manipulating the data to get the amount of episodes from the 5 directors with most episodes, and grouping everybody else in "Other".
+
 ```{r}
 # Episodes by type
 episodes_by_type <- 
@@ -179,13 +187,17 @@ plot_best_worst
 ```
 
 Putting both plots together with patchwork:
-```{r, fig.height=5.8, fig.width=7.5}
+```{r}
 combined_plot <- 
   (plot_waffle / plot_best_worst)
 
-combined_plot &
+combined_plot <- 
+  combined_plot &
   theme(plot.background  = element_rect(fill = '#01050e',
                                         color = '#01050e'))
 ```
 
+```{r, fig.height=5.8, fig.width=7.5}
+combined_plot
+```
 
