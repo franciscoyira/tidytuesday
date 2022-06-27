@@ -9,4 +9,4 @@ My contributions to [#TidyTuesday](https://github.com/rfordatascience/tidytuesda
 
 Visualisation of IMDB data about Doctor Who episodes, showing the number of episodes and distribution of ratings by director. This plot uses custom `ggplot` themes and fonts to match Doctor Who's TV show aesthetic. The data for this specific contribution was made available through the package [`datardis`](https://cran.r-project.org/web/packages/datardis/index.html).
 
-Code: [R Markdown](contributions/2021_48_ggplot_doctor_who.Rmd)
+Code: [R Notebook](https://franciscoyira.github.io/tidytuesday/contributions/2021_48_ggplot_doctor_who.nb)
